@@ -1,0 +1,53 @@
+stages:
+- stage: DeployAgent
+  jobs:
+  - job: GetAgent
+    pool: 
+      name: self-hosted
+      demands:
+        - Agent.Name -equals EC2AMAZON
+    steps:
+    - script: echo "Getting .Net CORE agent"
+      displayName: 'Get DotNetCore Agent'
+    - task: ExtractFiles@1
+      inputs:
+        archiveFilePatterns: 'contrast.*.nupkg'
+        destinationFolder: '$(Build.ArtifactStagingDirectory)'
+        cleanDestinationFolder: false
+        overwriteExistingFiles: true
+        pathToSevenZipTool: 'C:\Program Files\7-Zip\7z.exe'
+
+    - task: CopyFiles@2
+      displayName: 'Copy PS Files'
+      inputs:
+        sourceFolder: '$(Build.SourcesDirectory)'
+        contents: 'update-agent-env-vars.ps1'
+        targetFolder: $(Build.ArtifactStagingDirectory)
+
+    - publish: $(Build.ArtifactStagingDirectory)
+      artifact: Drop
+      displayName: 'Publish Artifacts'
+
+  - deployment: DeployToVM
+    environment: 
+      name: Development
+      resourceType: virtualMachine
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: Drop
+            displayName: 'Download Artifacts'
+          - task: CopyFiles@2 # Or CopyFilesOverSSH@0 for Linux VMs
+            displayName: 'Copy files to target VM'
+            inputs:
+              sourceFolder: '$(Pipeline.Workspace)/Drop' # Source of files in your pipeline artifact
+              contents: '**'
+              targetFolder: 'C:\Contrast' # Destination path on your non-Azure VM
+              # For CopyFilesOverSSH@0, additional inputs like sshEndpoint and readyTimeout are required.
+          - task: PowerShell@2
+            inputs:
+              filePath: 'C:\Contrast\update-agent-env-vars.ps1'
+              arguments: '4.5.1'
+    dependsOn: GetAgent

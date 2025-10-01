@@ -1,0 +1,222 @@
+pool: 
+  name: self-hosted
+  demands:
+    - Agent.Name -equals linux-ubuntu
+
+# Pipeline parameter for agent type
+parameters:
+  - name: varWhatAgent
+    displayName: 'Contrast Agent Type'
+    type: string
+    default: JAVA
+    values:
+      - FLEX
+      - JAVA
+      - DOTNET
+      - CORE
+      - NODEJS
+      - PYTHON
+      - GO
+      - RUBY
+  - name: ContrastInstallPath
+    displayName: 'Contrast Install Path'
+    type: string
+    default: '/home/ubuntu/demo-petclinic/'
+
+variables:
+- group: deploy-secrets
+
+jobs:
+  - job: GetAgent
+    displayName: Get Agent to machine
+    continueOnError: true
+    workspace:
+      clean: outputs
+    steps:
+    - script: echo "Fetch Contrast Agent"
+      displayName: 'Fetch the Contrast Agent'
+
+# CHECK FOR CURL on Windows and then download the flex agent 
+  - job: FlexAgent
+    steps:
+    - script: echo "Running FLEX agent deployment script"
+      displayName: 'Deploy FLEX Agent'   
+    - task: PowerShell@2
+      displayName: Check for curl
+      inputs:
+        targetType: 'inline'
+        script: |
+          if (Get-Command curl -ErrorAction SilentlyContinue) {
+              Write-Host "curl is installed."
+              # Perform actions if curl is found
+          } else {
+              Write-Host "curl is NOT installed."
+              # Handle the case where curl is not found (e.g., install it, fail the pipeline)
+              exit 1 # Exit with a non-zero code to fail the task
+          }
+      condition: eq(variables['Agent.OS'], 'Windows_NT')
+    - script: curl -L https://download.java.contrastsecurity.com/latest -o contrast.jar 2> C:\\tmp\\curl_logs.txt
+      displayName: 'Download Flex Agent'
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'FLEX') }})
+
+# CHECK FOR CURL on Windows and then download the java agent 
+  - job: JavaAgent
+    steps:
+    - script: echo "Running JAVA agent deployment script"
+      displayName: 'Deploy JAVA Agent'
+    - task: PowerShell@2
+      displayName: Check for curl
+      inputs:
+        targetType: 'inline'
+        script: |
+          if (Get-Command curl -ErrorAction SilentlyContinue) {
+              Write-Host "curl is installed."
+              # Perform actions if curl is found
+          } else {
+              Write-Host "curl is NOT installed."
+              # Handle the case where curl is not found (e.g., install it, fail the pipeline)
+              exit 1 # Exit with a non-zero code to fail the task
+          }
+      condition: and (succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
+    - script: curl https://download.java.contrastsecurity.com/latest -o contrast.jar 2> C:\\tmp\\curl_logs.txt
+      displayName: 'Download Java Agent'
+      condition: and (succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
+    - script: curl https://download.java.contrastsecurity.com/latest -o contrast.jar 2> /tmp/curl_logs.txt
+      displayName: 'Download Java Agent'
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(Build.SourcesDirectory)/'
+        Contents: 'contrast*.jar'
+        TargetFolder: '${{ parameters.ContrastInstallPath }}'
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    - task: Bash@3
+      displayName: list containers
+      inputs:
+        targetType: 'inline'
+        script: 'sudo docker ps'
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    - task: Bash@3
+      displayName: stop all containers
+      inputs:
+        targetType: 'inline'
+        script: 'sudo docker stop $(sudo docker ps -q)'
+      continueOnError: true
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    - task: CopyFiles@2
+      displayName: copy files of app
+      inputs:
+        SourceFolder: '/home/ubuntu/demo-petclinic/'
+        Contents: '**'
+        TargetFolder: '$(Build.SourcesDirectory)/'
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    - task: Bash@3
+      displayName: build new container
+      inputs:
+        targetType: 'inline'
+        script: 'sudo ./1-Build-Docker-Image.sh'
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    
+    - task: Bash@3
+      displayName: run new container
+      inputs:
+        targetType: 'inline'
+        script: 'sudo docker run -v $PWD/contrast_security.yaml:/etc/contrast/java/contrast_security.yaml -p 8080:8080 -d spring-petclinic:1.5.1'
+      condition: and (succeeded(), ne(variables['Agent.OS'], 'Windows_NT'))
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'JAVA') }})
+
+# CHECK FOR CURL on Windows and then download the dotnet agent 
+  - job: DotNetAgent
+    steps:
+    - script: echo "Running DOTNET agent deployment script"
+      displayName: 'Deploy DOTNET Agent'
+    - task: PowerShell@2
+      displayName: Check for curl
+      inputs:
+        targetType: 'inline'
+        script: |
+          if (Get-Command curl -ErrorAction SilentlyContinue) {
+              Write-Host "curl is installed."
+              # Perform actions if curl is found
+          } else {
+              Write-Host "curl is NOT installed."
+              # Handle the case where curl is not found (e.g., install it, fail the pipeline)
+              exit 1 # Exit with a non-zero code to fail the task
+          }
+      condition: and (succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
+    - script: curl https://www.nuget.org/api/v2/package/Contrast.NET.Azure.AppService/51.3.1 2> C:\\tmp\\curl_logs.txt
+      displayName: 'Download Java Agent'
+      condition: and (succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))    
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'DOTNET') }})
+
+# CHECK FOR CURL on Windows and then download the dotnetcore agent
+  - job: DotNetCoreAgent
+    steps:
+    - script: echo "Running CORE agent deployment script"
+      displayName: 'Deploy CORE Agent'
+    - task: PowerShell@2
+      displayName: Check for curl
+      inputs:
+        targetType: 'inline'
+        script: |
+          if (Get-Command curl -ErrorAction SilentlyContinue) {
+              Write-Host "curl is installed."
+              # Perform actions if curl is found
+          } else {
+              Write-Host "curl is NOT installed."
+              # Handle the case where curl is not found (e.g., install it, fail the pipeline)
+              exit 1 # Exit with a non-zero code to fail the task
+          }
+      condition: and (succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))
+    - script: curl https://www.nuget.org/api/v2/package/Contrast.SensorsNetCore/4.5.1 2> C:\\tmp\\curl_logs.txt
+      displayName: 'Download DotNetCore Agent'
+      condition: and (succeeded(), eq(variables['Agent.OS'], 'Windows_NT'))        
+    
+    - script: echo "Install DotNetCore Contrast Agent"
+      displayName: 'Install the DotNetCore Contrast Agent'
+      
+    - task: ExtractFiles@1
+      inputs:
+        archiveFilePatterns: 'contrast.*.nupkg'
+        destinationFolder: '$(Build.ArtifactStagingDirectory)'
+        cleanDestinationFolder: false
+        overwriteExistingFiles: true
+        pathToSevenZipTool: 'C:\Program Files\7-Zip\7z.exe'
+        
+    - task: PowerShellOnTargetMachines@3
+      inputs:
+        Machines: 'ec2-13-58-60-185.us-east-2.compute.amazonaws.com'
+        UserName: 'Administrator'
+        UserPassword: '$(ec2-password)'
+        ScriptType: 'FilePath'
+        ScriptPath: 'deploy-agent.ps1'
+        ScriptArguments: '-computerName ec2-13-58-60-185.us-east-2.compute.amazonaws.com'
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(Build.ArtifactStagingDirectory)'
+        Contents: '**'
+        TargetFolder: '${{ parameters.ContrastInstallPath }}'
+        OverWrite: true
+        
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'CORE') }})
+
+  - job: NodeJsAgent
+    steps:
+    - script: echo "Running NODEJS agent deployment script"
+      displayName: 'Deploy NODEJS Agent'
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'NODEJS') }})
+  - job: PythonAgent
+    steps:
+    - script: echo "Running PYTHON agent deployment script"
+      displayName: 'Deploy PYTHON Agent'
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'PYTHON') }})
+  - job: GoAgent
+    steps:
+    - script: echo "Running GO agent deployment script"
+      displayName: 'Deploy GO Agent'
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'GO') }})
+  - job: RubyAgent
+    steps:
+    - script: echo "Running RUBY agent deployment script"
+      displayName: 'Deploy RUBY Agent'
+    condition: and(succeeded(), ${{ eq(parameters.varWhatAgent, 'RUBY') }})
